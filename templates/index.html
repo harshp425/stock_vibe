@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Vibe</title>
+  <link rel="stylesheet" href="static/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Stock Vibe</h1>
+      <p>Track stock prices and analyze news sentiment in real-time</p>
+    </div>
+
+    <div class="search-container">
+      <form method="POST" class="search-form">
+        <input type="text" name="ticker" placeholder="Enter Stock Ticker (e.g., AAPL, MSFT, GOOGL)" required
+          class="search-input" {% if ticker %}value="{{ ticker }}" {% endif %}>
+        <button type="submit" class="search-button">Analyze</button>
+      </form>
+    </div>
+
+    <div class="loading" style="display: none;">
+      <div class="spinner"></div>
+    </div>
+
+    {% if ticker %}
+    <div class="dashboard">
+      <div class="left-column">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">{{ stock_info.get("Name", ticker) }} ({{ ticker }})</h2>
+            <span class="card-badge" style="background-color: #3498db;">{{ stock_info.get("Sector", "N/A") }}</span>
+          </div>
+
+          <div class="chart-container">
+            <canvas id="stockChart"></canvas>
+          </div>
+
+          <div class="stock-info">
+            <div class="info-item">
+              <div class="info-title">Market Cap</div>
+              <div class="info-value">{{ stock_info.get("Market Cap", "N/A") }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-title">Previous Close</div>
+              <div class="info-value">{{ stock_info.get("Previous Close", "N/A") }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-title">Industry</div>
+              <div class="info-value">{{ stock_info.get("Industry", "N/A") }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Sentiment Overview</h2>
+          </div>
+
+          <div class="sentiment-summary">
+            <div class="sentiment-stat">
+              <div class="sentiment-stat-value positive-stat">{{ sentiment_counts.get("POSITIVE", 0) }}</div>
+              <div class="sentiment-stat-label">Positive News</div>
+            </div>
+            <div class="sentiment-stat">
+              <div class="sentiment-stat-value negative-stat">{{ sentiment_counts.get("NEGATIVE", 0) }}</div>
+              <div class="sentiment-stat-label">Negative News</div>
+            </div>
+            <div class="sentiment-stat">
+              <div class="sentiment-stat-value" style="color: #2c3e50;">
+                {% if sentiment_counts.get("POSITIVE", 0) + sentiment_counts.get("NEGATIVE", 0) > 0 %}
+                {{ "%.1f"|format(sentiment_counts.get("POSITIVE", 0) / (sentiment_counts.get("POSITIVE", 0) +
+                sentiment_counts.get("NEGATIVE", 0)) * 100) }}%
+                {% else %}
+                0%
+                {% endif %}
+              </div>
+              <div class="sentiment-stat-label">Positive Ratio</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Top Headlines</h2>
+          </div>
+
+          <div class="news-list">
+            {% if analyzed_news %}
+            {% for news in analyzed_news %}
+            <div class="news-item {{ 'positive' if news.2 == 'POSITIVE' else 'negative' }}">
+              <h3 class="news-title">
+                <a href="{{ news.1 }}" target="_blank">{{ news.0 }}</a>
+              </h3>
+              <div>
+                <span class="sentiment-badge {{ 'positive-badge' if news.2 == 'POSITIVE' else 'negative-badge' }}">
+                  {{ news.2 }} ({{ "%.2f"|format(news.3) }})
+                </span>
+              </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="no-results">
+              <i class="fas fa-newspaper"></i>
+              <p>No news articles found for {{ ticker }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="no-results">
+      <i class="fas fa-chart-line"></i>
+      <h2>Enter a stock ticker to get started</h2>
+      <p>You'll see real-time stock data, news analysis, and sentiment information</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if ticker and dates and prices %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const ctx = document.getElementById('stockChart').getContext('2d');
+      const stockDates = JSON.parse('{{ dates | tojson | safe }}');
+      const stockPrices = JSON.parse('{{ prices | tojson | safe }}');
+
+      if (!stockDates || !stockPrices || stockDates.length === 0 || stockPrices.length === 0 || stockDates.length !== stockPrices.length) {
+        console.error("Invalid or empty chart data received.");
+        const chartContainer = document.querySelector('.chart-container');
+        if (chartContainer) {
+          chartContainer.innerHTML = '<p style="text-align: center; padding: 20px; color: #777;">Could not load chart data.</p>';
+        }
+        return;
+      }
+
+
+      const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+      gradient.addColorStop(0, 'rgba(52, 152, 219, 0.6)');
+      gradient.addColorStop(1, 'rgba(52, 152, 219, 0.1)');
+
+      const stockChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: stockDates,
+          datasets: [{
+            label: '{{ ticker }} Price',
+            data: stockPrices,
+            borderColor: '#3498db',
+            backgroundColor: gradient,
+            borderWidth: 3,
+            pointBackgroundColor: '#3498db',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 5,
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 2000,
+            easing: 'easeOutQuart'
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: 'rgba(44, 62, 80, 0.9)',
+              titleFont: {
+                size: 14,
+                weight: 'bold'
+              },
+              bodyFont: {
+                size: 13
+              },
+              padding: 12,
+              displayColors: false,
+              callbacks: {
+                label: function (context) {
+                  const value = typeof context.raw === 'number' ? context.raw : 0;
+                  return `$${value.toFixed(2)}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              },
+              ticks: {
+                font: {
+                  size: 12
+                }
+              }
+            },
+            y: {
+              grid: {
+                color: 'rgba(0, 0, 0, 0.05)'
+              },
+              ticks: {
+                font: {
+                  size: 12
+                },
+                callback: function (value) {
+                  const numValue = typeof value === 'number' ? value : 0;
+                  return `$${numValue.toFixed(2)}`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const form = document.querySelector('.search-form');
+      const loadingDiv = document.querySelector('.loading');
+      const dashboardDiv = document.querySelector('.dashboard');
+      const noResultsDiv = document.querySelector('.no-results');
+
+      if (form && loadingDiv && (dashboardDiv || noResultsDiv)) {
+        form.addEventListener('submit', () => {
+          loadingDiv.style.display = 'flex';
+          if (dashboardDiv) dashboardDiv.style.display = 'none';
+          if (noResultsDiv && noResultsDiv.style.display !== 'none') noResultsDiv.style.display = 'none';
+        });
+      }
+      if (loadingDiv && "{% if ticker %}true{% else %}false{% endif %}" === "true") {
+        loadingDiv.style.display = 'none';
+        if (dashboardDiv) dashboardDiv.style.display = 'grid';
+      }
+
+
+    });
+  </script>
+  {% endif %}
+</body>
+
+</html>

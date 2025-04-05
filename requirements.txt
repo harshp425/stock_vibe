@@ -1,0 +1,7 @@
+Flask
+requests
+matplotlib
+beautifulsoup4
+transformers
+yfinance
+torch
